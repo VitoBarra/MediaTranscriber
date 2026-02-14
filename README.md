@@ -5,6 +5,7 @@ A Python tool for extracting transcripts from video and audio files.
 ## Features
 
 - Extracts text and transcripts from video and audio sources.
+- Downloads and converts transcripts from SharePoint/Stream links.
 - Automatically creates a structured directory for processing media and storing results.
 - Includes utilities for data processing.
 - Supports web scraping for gathering transcripts from online sources.
@@ -28,7 +29,7 @@ A Python tool for extracting transcripts from video and audio files.
 
 ## General Pipeline Guide
 
-The system supports **two distinct pipelines** for transcript generation.  
+The system supports **four distinct pipelines** for transcript generation.  
 On the first run, the bundled executable automatically creates all necessary folders so you can drop your files into the right place.
 
 ```mermaid
@@ -37,13 +38,18 @@ flowchart LR
   AR1[1.1-RawAUDIO]
   VR2[1.2-RawVIDEO]
   AR2[1.1-RawAUDIO]
+  SP[1.3-RawLINK]
+  HTML_IN[3.1-HTML]
   VR1 --> AR1
   AR2 --> VR2
   VR2 --> SV[2.2-SplittedVIDEO]
   AR1 --> SA[2.1-SplittedAUDIO]
-  SA --> HTML[3-HTML]
+  SA --> HTML[3.1-HTML]
   SV --> HTML
+  SP --> JSON[3.1-JSON]
   HTML --> Transcript[4-Transcript]
+  JSON --> Transcript
+  HTML_IN --> Transcript
 
 ```
 
@@ -82,6 +88,53 @@ This alternate workflow starts from audio and goes through a video stage:
 4. **Web Scraping & Conversion**: Splitted video files from `2.2-SplittedVIDEO/` are processed into HTML outputs in `3-HTML/`.
 
 5. **Transcript Generation**: HTML files are converted into transcripts and saved in `4-Transcript/`.
+
+
+---
+
+### 3. SharePoint Pipeline
+
+This pipeline downloads and converts transcripts directly from SharePoint/Stream links:
+
+1. **Link Input**: Prepare a JSON file with SharePoint/Stream links in `1.3-RawLINK/`.  
+   The JSON can be in one of these formats:
+   ```json
+   {
+     "Video Name 1": "https://...",
+     "Video Name 2": "https://..."
+   }
+   ```
+   or
+   ```json
+   [
+     {"name": "Video Name 1", "url": "https://..."},
+     {"name": "Video Name 2", "url": "https://..."}
+   ]
+   ```
+   or
+   ```json
+   [["Video Name 1", "https://..."], ["Video Name 2", "https://..."]]
+   ```
+
+2. **SharePoint Transcript Download**: The system opens each link in a browser, extracts the transcript using Selenium, and saves the structured data as JSON in `3.1-JSON/`.
+
+3. **Login Handling**: If you're not already logged in, the system will wait for you to log in to SharePoint/Stream (default timeout: 600 seconds).
+
+4. **Transcript Conversion**: JSON transcript files are converted into concatenated markdown transcripts and saved in `4-Transcript/`.
+
+
+---
+
+### 4. HTML-to-Transcript Pipeline
+
+This lightweight pipeline skips all media processing and goes directly from HTML files to transcripts:
+
+1. **HTML Input**: Place pre-processed HTML files in `3.1-HTML/`.  
+   (These might come from a previous run, external sources, or manual uploads.)
+
+2. **Transcript Generation**: HTML files are parsed and converted into transcripts, which are saved in `4-Transcript/`.
+
+This is useful when you already have HTML files and just need to extract and format the transcript text.
 
 
 ---
