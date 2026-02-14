@@ -108,11 +108,12 @@ def upload_video(job: VideoTranscriptJobDescriptor, proxy: dict[str] = None, hea
 
         try:
             driver.uc_open_with_reconnect(UPLOAD_URL, 6)
-            time.sleep(2)
-            file_input = driver.find_element(By.ID, "file-input")
-        except Exception:
+            WebDriverWait(driver, 2).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".file-upload-area")))
+        except Exception as e:
+            Logger.error(f"{threadName}: cannot reach upload page")
             raise PageUnreachable
 
+        file_input = driver.find_element(By.ID, "file-input")
         file_input.send_keys(str(job.VideoPath))
 
         if job.Lock.locked():
@@ -165,74 +166,15 @@ def upload_video(job: VideoTranscriptJobDescriptor, proxy: dict[str] = None, hea
             Logger.info(f"{threadName}: lock released for job {job}")
 
 
-def try_upload(jobDesc: VideoTranscriptJobDescriptor, proxy: dict[str], headless_mode=False) -> JobStatus:
+def tryUpload_VzardAi(jobDesc: VideoTranscriptJobDescriptor, proxy: dict[str], headless_mode=False) -> JobStatus:
     try:
         upload_video(jobDesc, proxy, headless_mode)
         return JobStatus.Success
     except PageUnreachable:
         return JobStatus.PageConnectionError
     except Exception as e:
-        Logger.error(f"try_upload Exception: {e}")
+        Logger.error(f"tryUpload_VzardAi Exception: {e}")
         return JobStatus.GenericError
 
 
-def UploadVideoFolder(Input_folder=SPLITTED_VIDEO_FOLDER, output_folder=HTML_OUTPUT_FOLDER,
-                      headless_Mode=False, workers:int=8) -> bool:
-    """
-    :param Input_folder:
-    :param output_folder:
-    :param headless_Mode:
-    :param workers:
-    :return: true if all jobs completed successfully
-    """
-    MAX_AGE_SECONDS = 1800
-    MAX_RETRIES = 3
-    proxy_failures = {}
 
-    proxy_list = getProxyList(PROXY_FILE, MAX_AGE_SECONDS)
-    video_jobs = GenerateJobsFromVideo(Input_folder, output_folder)
-    incomplete_jobs = [job for job in video_jobs if not os.path.isfile(job.GetHTMLOutputFilePath())]
-
-    if not incomplete_jobs:
-        Logger.info("All transcription jobs completed successfully")
-        return True
-
-    while proxy_list:
-        for job in incomplete_jobs:
-            if job.Lock.locked():
-                continue
-            Logger.info(f"Processing transcription job: {job}")
-
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                proxyTried = 0
-                futures = {executor.submit(try_upload, job, proxy, headless_Mode): proxy for proxy in proxy_list}
-                proxy_to_try = len(proxy_list)
-                for future in as_completed(futures):
-                    proxyTried += 1
-                    proxy = futures[future]
-                    status = future.result()
-                    proxy_str = f"{proxy['ip']}:{proxy['port']}"
-
-                    Logger.info(f"Job progress, proxy tried: {proxyTried}/{proxy_to_try}")
-                    if status == JobStatus.Success:
-                        Logger.info(f"Job {job} completed successfully with proxy {proxy_str}")
-                        job.IsCompleted = True
-                        incomplete_jobs.remove(job)
-                        break
-                    elif status == JobStatus.PageConnectionError:
-                        proxy_list.remove(proxy)
-                        WriteJson(PROXY_FILE, proxy_list)
-                    elif status == JobStatus.GenericError:
-                        proxy_failures[proxy_str] = proxy_failures.get(proxy_str, 0) + 1
-                        if proxy_failures[proxy_str] >= MAX_RETRIES:
-                            proxy_list.remove(proxy)
-                            del proxy_failures[proxy_str]
-                            WriteJson(PROXY_FILE, proxy_list)
-                            Logger.warning(f"Removed proxy {proxy_str} after {MAX_RETRIES} failures")
-
-                if not job.IsCompleted:
-                    Logger.error(f"Upload failed for job {job}")
-
-        time.sleep(2)
-
-    return all(job.IsCompleted for job in video_jobs)

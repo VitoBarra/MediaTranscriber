@@ -1,4 +1,7 @@
 import argparse
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from DataProcessing import RAW_VIDEO_FOLDER, RAW_AUDIO_FOLDER, \
     SPLITTED_AUDIO_FOLDER, HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT, ENHANCED_AUDIO_FOLDER, SPLITTED_VIDEO_FOLDER
@@ -23,8 +26,8 @@ def main():
     )
     parser.add_argument(
         "-p", "--pipeline",
-        choices=["audio", "video", "help"],
-        help="Choose which pipeline to run: 'audio', 'video', or 'help' to show usage"
+        choices=["audio", "video", "html"],
+        help="Choose which pipeline to run: 'audio', 'video', 'html'"
     )
     parser.add_argument(
         "-s", "--split",
@@ -55,29 +58,34 @@ def main():
     split_minutes = args.split
     workers = args.workers
 
-    if args.pipeline == "help":
-        parser.print_help()
-        args.pipeline = None
-
     while not args.pipeline:
         Logger.GetConsole().print("\nSelect a pipeline to run:")
-        Logger.GetConsole().print("1) Audio Pipeline (Video → Audio → Transcript)")
-        Logger.GetConsole().print("2) Video Pipeline (Audio → Video → Transcript)")
-        Logger.GetConsole().print("3) Help (Show usage)")
-        Logger.GetConsole().print("4) Exit")
+        Logger.GetConsole().print("1) Audio Pipeline (Video → Audio → HTML → Transcript)")
+        Logger.GetConsole().print("2) Video Pipeline (Audio → Video → HTML → Transcript)")
+        Logger.GetConsole().print("3) Html (HTML → Transcript)")
+        Logger.GetConsole().print("4) Help (Show usage)")
+        Logger.GetConsole().print("5) Exit")
 
-        choice = input("Enter choice [1/2/3/4]: ").strip()
+        choice = input("Enter choice [1/2/3/4/5]: ").strip()
         if choice == "1":
             args.pipeline = "audio"
         elif choice == "2":
             args.pipeline = "video"
         elif choice == "3":
-            parser.print_help()
+            args.pipeline = "html"
         elif choice == "4":
+            parser.print_help()
+        elif choice == "5":
             Logger.GetConsole().print("Exiting.")
             return
         else:
             Logger.GetConsole().print("Invalid choice. Try again.")
+
+    if args.pipeline == "html":
+        Logger.info("Running HTML -> transcript conversion only...")
+        ExtractTextFromFolder(HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT)
+        Logger.info("Transcript extraction complete.")
+        return
 
     if args.pipeline == "audio":
         Logger.info("Starting Audio Pipeline...\n")
