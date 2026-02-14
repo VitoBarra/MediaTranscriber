@@ -1,3 +1,5 @@
+import random
+import time
 from enum import Enum
 from selenium.common import TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
@@ -72,3 +74,6 @@ def click_element_if_clickable(driver, element, timeout=5, threadName="noname"):
     except Exception as e:
         Logger.error(f"{threadName}: Error during click: {e}")
         return False
+
+def human_delay(a=1.4, b=2.8):
+    time.sleep(random.uniform(a, b))

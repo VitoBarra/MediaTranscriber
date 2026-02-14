@@ -101,6 +101,9 @@ def fetch_proxy_swiftshadow(find_https=True):
 
 
 def getProxyList(proxy_file=PROXY_FILE, MAX_AGE_SECONDS=1800):
+    if proxy_file is None:
+        return None
+
     if IsModifiedRecently(proxy_file, MAX_AGE_SECONDS):
         proxy_list = ReadJson(proxy_file)
         Logger.info(f"Loaded {len(proxy_list)} proxies from file '{proxy_file}'")
