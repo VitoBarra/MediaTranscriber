@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 from DataProcessing import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS
@@ -60,3 +61,9 @@ def GenerateJobsFromVideo(video_folder: Path | str, out_folder_html: Path | str)
             )
 
     return jobs
+
+
+@dataclass(frozen=True)
+class SharePointLinkJob:
+    name: str
+    url: str

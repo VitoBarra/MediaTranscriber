@@ -4,7 +4,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from DataProcessing import RAW_VIDEO_FOLDER, RAW_AUDIO_FOLDER, \
-    SPLITTED_AUDIO_FOLDER, HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT, ENHANCED_AUDIO_FOLDER, SPLITTED_VIDEO_FOLDER
+    SPLITTED_AUDIO_FOLDER, HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT, ENHANCED_AUDIO_FOLDER, SPLITTED_VIDEO_FOLDER, \
+    RAW_SHAREDPOINT_FOLDER, JSON_OUTPUT_FOLDER
 from DataProcessing.AudioEnhancer import EnhanceAudioFolder
 from DataProcessing.AudioExtractor import AudioFormat, VideoFolderToAudio
 from DataProcessing.HTMLToMDConverter import ExtractTextFromFolder
@@ -16,12 +17,14 @@ from Utility.Logger import LogLevel, Logger
 from WebScraper import PROXY_FILE
 from WebScraper.AnyToText import tryUpload_AnyToText
 from WebScraper.ProxyUtil import getProxyList
+from WebScraper.SharePointDownloader import GetTranscriptDataFromSharedPoint, \
+    ConvertSharePointJsonToMarkdown
 from WebScraper.VideoTranscriptJobDescriptor import GenerateJobsFromVideo
 from WebScraper.VzardAIUploader import tryUpload_VzardAi
 from WebScraper.WebScrapingUtility import JobStatus
 
 # --- Settings ---
-HEADLESS_MODE = True
+HEADLESS_MODE = False
 DEFAULT_WORKERS = 8
 
 
@@ -32,8 +35,8 @@ def main():
     )
     parser.add_argument(
         "-p", "--pipeline",
-        choices=["audio", "video", "html"],
-        help="Choose which pipeline to run: 'audio', 'video', 'html'"
+        choices=["audio", "video", "sharepoint" ,"html"],
+        help="Choose which pipeline to run: 'audio', 'video', 'sharepoint', 'html'"
     )
     parser.add_argument(
         "-s", "--split",
@@ -68,30 +71,28 @@ def main():
         Logger.GetConsole().print("\nSelect a pipeline to run:")
         Logger.GetConsole().print("1) Audio Pipeline (Video → Audio → HTML → Transcript)")
         Logger.GetConsole().print("2) Video Pipeline (Audio → Video → HTML → Transcript)")
-        Logger.GetConsole().print("3) Html (HTML → Transcript)")
-        Logger.GetConsole().print("4) Help (Show usage)")
-        Logger.GetConsole().print("5) Exit")
+        Logger.GetConsole().print("3) SharePoint Pipeline (Links → Transcript)")
+        Logger.GetConsole().print("4) Html (HTML → Transcript)")
+        Logger.GetConsole().print("5) Help (Show usage)")
+        Logger.GetConsole().print("6) Exit")
 
-        choice = input("Enter choice [1/2/3/4/5]: ").strip()
+        choice = input("Enter choice [1/2/3/4/5/6]: ").strip()
         if choice == "1":
             args.pipeline = "audio"
         elif choice == "2":
             args.pipeline = "video"
         elif choice == "3":
-            args.pipeline = "html"
+            args.pipeline = "sharepoint"
         elif choice == "4":
-            parser.print_help()
+            args.pipeline = "html"
         elif choice == "5":
+            parser.print_help()
+        elif choice == "6":
             Logger.GetConsole().print("Exiting.")
             return
         else:
             Logger.GetConsole().print("Invalid choice. Try again.")
 
-    if args.pipeline == "html":
-        Logger.info("Running HTML -> transcript conversion only...")
-        ExtractTextFromFolder(HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT)
-        Logger.info("Transcript extraction complete.")
-        return
 
     if args.pipeline == "audio":
         Logger.info("Starting Audio Pipeline...\n")
@@ -99,9 +100,37 @@ def main():
     elif args.pipeline == "video":
         Logger.info("Starting Video Pipeline...\n")
         VideoPipeline(split_minutes, workers)
+    if args.pipeline == "sharepoint":
+        Logger.info("Starting SharePoint Pipeline...\n")
+        SharePointPipeline("Shared_point_login")
+        Logger.info("SharePoint Pipeline complete.")
+    elif args.pipeline == "html":
+        Logger.info("Running HTML -> transcript conversion only...")
+        ExtractTextFromFolder(HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT)
+        Logger.info("Transcript extraction complete.")
+        return
 
 
 # --- Pipeline functions ---
+def SharePointPipeline(profile_name: str):
+    Logger.info("Downloading SharePoint transcripts (structured JSON)...")
+
+    GetTranscriptDataFromSharedPoint(
+        headless=HEADLESS_MODE,
+        raw_links_folder=RAW_SHAREDPOINT_FOLDER,
+        json_out_folder=JSON_OUTPUT_FOLDER,
+        profile_name=profile_name,
+        proxy_file=None,
+    )
+    Logger.info("SharePoint JSON download complete.")
+
+    Logger.info("Converting SharePoint JSON to concatenated Markdown transcripts...")
+    ConvertSharePointJsonToMarkdown(
+        json_folder=JSON_OUTPUT_FOLDER,
+        md_out_folder=OUTPUT_TRANSCRIPT,
+    )
+    Logger.info("SharePoint transcript conversion complete.")
+
 def AudioPipeline(split_minutes: int, workers: int):
     Logger.info("Converting videos to audio...")
     VideoFolderToAudio(RAW_VIDEO_FOLDER, RAW_AUDIO_FOLDER, AudioFormat.WAV, overwrite=False)
@@ -128,7 +157,7 @@ def AudioPipeline(split_minutes: int, workers: int):
     jobToDo = True
     while jobToDo:
         jobToDo = not WebScrapingJobLauncher(
-            tryUpload_VzardAi,
+            tryUpload_AnyToText,
             SPLITTED_AUDIO_FOLDER,
             HTML_OUTPUT_FOLDER,
             HEADLESS_MODE,
@@ -140,7 +169,7 @@ def AudioPipeline(split_minutes: int, workers: int):
     ExtractTextFromFolder(HTML_OUTPUT_FOLDER, OUTPUT_TRANSCRIPT)
     Logger.info("Transcript extraction complete.")
 
-# --- Video functions ---
+
 def VideoPipeline(split_minutes: int, workers: int):
     Logger.info("Converting audio to video...")
     AudioFolderToVideo(RAW_AUDIO_FOLDER, RAW_VIDEO_FOLDER, VideoFormat.MP4, overwrite=False)
