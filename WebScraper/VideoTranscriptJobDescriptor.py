@@ -1,11 +1,17 @@
 import json
 import os
 import threading
-from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from DataProcessing import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS
 from Utility.FileUtil import ReadJson, WriteJson
+
+
+class JobStatus(Enum):
+    IDLE = "idle"
+    DONE = "done"
+    FAILED = "failed"
 
 
 class VideoTranscriptJobDescriptor:
@@ -63,7 +69,14 @@ def GenerateJobsFromVideo(video_folder: Path | str, out_folder_html: Path | str)
     return jobs
 
 
-@dataclass(frozen=True)
+
 class SharePointLinkJob:
     name: str
     url: str
+    status: JobStatus
+
+    def __init__(self, name: str, url: str):
+        self.name = name
+        self.url = url
+        self.status = JobStatus.IDLE
+

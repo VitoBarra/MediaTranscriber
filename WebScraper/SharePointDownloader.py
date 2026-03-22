@@ -15,7 +15,7 @@ from Utility.FileUtil import ReadJson, WriteJson
 from Utility.Logger import Logger
 from WebScraper.AnyToText import human_delay
 from WebScraper.ProxyUtil import getProxyList
-from WebScraper.VideoTranscriptJobDescriptor import SharePointLinkJob
+from WebScraper.VideoTranscriptJobDescriptor import SharePointLinkJob, JobStatus
 
 
 def _sanitize_name(name: str) -> str:
@@ -219,7 +219,7 @@ def read_full_rows(
     prev_count = 0
     stable = 0
     t0 = time.time()
-
+    Logger.info(f"scrolling transcript")
     for loop_i in range(max_loops):
         if time.time() - t0 > max_seconds:
             Logger.warning("SharePoint: max_seconds reached, stopping.")
@@ -296,7 +296,6 @@ def GetTranscriptDataFromSharedPoint(
 
     jobs = load_sharepoint_jobs(raw_links_folder)
 
-    proxy = None
     proxy_str = None
     if proxy_file:
         proxy_list = getProxyList(proxy_file, max_proxy_age_seconds)
@@ -315,8 +314,11 @@ def GetTranscriptDataFromSharedPoint(
         proxy=proxy_str,
     )
 
-    try:
-        for job in jobs:
+    for job in jobs:
+        if job.status == JobStatus.FAILED or job.status == JobStatus.DONE:
+            continue
+
+        try:
             name = _sanitize_name(job.name)
             url = normalize_sharepoint_stream_url(job.url)
             out_json = json_out_folder / f"{name}.json"
@@ -329,30 +331,32 @@ def GetTranscriptDataFromSharedPoint(
             driver.get(url)
             human_delay(3.2, 5.2)
 
-            open_transcript_panel_if_needed(driver)
-
-            Logger.info(f"{name}: wait transcript (login if needed)")
+            Logger.info(f"{name}: wait app opening (login if needed)")
             WebDriverWait(driver, wait_login_seconds).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div[id^='sub-entry-']"))
+                EC.presence_of_element_located((By.ID, "appRoot"))
             )
 
-            Logger.info(f"{name}: scrolling transcript")
+            Logger.info(f"{name}: opening transcript panel")
+            open_transcript_panel_if_needed(driver)
+
+            Logger.info(f"{name}: reading transcript")
             rows = read_full_rows(driver)
 
+            Logger.info(f"{name}: saveing transcript")
             WriteJson(out_json, {"name": name, "url": url, "rows": rows})
             Logger.info(f"{name}: saved json -> {out_json} (rows={len(rows)})")
 
             time.sleep(2.0)
 
-    except TimeoutException as e:
-        Logger.error(f"SharePoint TIMEOUT: {e}")
-        raise
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
-        Logger.info("SharePoint: Driver closed.")
+        except TimeoutException as e:
+            Logger.error(f"SharePoint TIMEOUT: {e}")
+            job.status = JobStatus.FAILED
+
+    try:
+        driver.quit()
+    except Exception:
+        pass
+    Logger.info("SharePoint: Driver closed.")
 
 
 def ConvertSharePointJsonToMarkdown(
