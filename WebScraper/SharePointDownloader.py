@@ -23,6 +23,71 @@ def _sanitize_name(name: str) -> str:
     name = re.sub(r"[^\w\-]+", "_", name)
     return name[:120] if name else "unnamed"
 
+
+def parse_commented_link(line: str) -> dict | None:
+    stripped = line.lstrip()
+    if not stripped.startswith("//"):
+        return None
+
+    payload = stripped[2:].strip()
+    if not payload.startswith("{"):
+        return None
+
+    payload = payload.rstrip(",")
+    try:
+        item = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+
+    if isinstance(item, dict) and "name" in item and "url" in item:
+        return item
+    return None
+
+
+def get_sanitize_links(raw_folder: Path, data_path: Path) -> str:
+    txt = data_path.read_text(encoding="utf-8-sig", errors="strict")
+    lines = txt.splitlines()
+    active_lines: list[str] = []
+    broken_links: list[dict] = []
+
+    for line in lines:
+        broken_item = parse_commented_link(line)
+        if broken_item:
+            broken_links.append(broken_item)
+            continue
+        active_lines.append(line)
+
+    active_txt = "\n".join(active_lines).strip()
+    if not broken_links:
+        return active_txt
+
+    broken_folder = raw_folder / "broken-links"
+    broken_folder.mkdir(parents=True, exist_ok=True)
+    broken_path = broken_folder / data_path.name
+
+    existing_broken: list[dict] = []
+    if broken_path.exists():
+        try:
+            current = broken_path.read_text(encoding="utf-8-sig", errors="strict").strip() or "[]"
+            existing_data = json.loads(current)
+            if isinstance(existing_data, list):
+                existing_broken = [x for x in existing_data if isinstance(x, dict)]
+        except json.JSONDecodeError:
+            Logger.warning(f"SharePoint: invalid broken-links json, recreating: {broken_path}")
+
+    seen = {(str(x.get("name")), str(x.get("url"))) for x in existing_broken}
+    for item in broken_links:
+        key = (str(item.get("name")), str(item.get("url")))
+        if key not in seen:
+            existing_broken.append(item)
+            seen.add(key)
+
+    broken_path.write_text(json.dumps(existing_broken, indent=2), encoding="utf-8")
+    data_path.write_text(active_txt + "\n", encoding="utf-8")
+    Logger.info(f"SharePoint: moved {len(broken_links)} commented links to {broken_path}")
+    return active_txt
+
+
 def load_sharepoint_jobs(raw_folder: Path | str) -> list[SharePointLinkJob]:
     raw_folder = Path(raw_folder)
 
@@ -38,7 +103,7 @@ def load_sharepoint_jobs(raw_folder: Path | str) -> list[SharePointLinkJob]:
     for data_path in candidates:
         Logger.info(f"Reading SharePoint links: {data_path}")
 
-        txt = data_path.read_text(encoding="utf-8-sig", errors="strict").strip()
+        txt = get_sanitize_links(raw_folder, data_path).strip()
         if not txt:
             raise ValueError(f"SharePoint links file is empty: {data_path}")
 
