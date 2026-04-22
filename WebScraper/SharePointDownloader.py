@@ -114,6 +114,8 @@ def load_sharepoint_jobs(raw_folder: Path | str) -> list[SharePointLinkJob]:
 
         def add_job(name: str, url: str):
             clean_name = _sanitize_name(str(name))
+            if not url.strip():
+                return
 
             if clean_name in name_to_source:
                 other = name_to_source[clean_name]
